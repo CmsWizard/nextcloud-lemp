@@ -1,0 +1,106 @@
+upstream php-handler { 
+    server unix:/var/run/php/php7.4-fpm.sock;
+}
+  
+server {
+     listen 80;
+     listen [::]:80;
+     server_name domain;
+     return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    root /var/www/nextcloud;
+    index index.php index.html index.htm;
+    server_name domain;
+
+
+    ssl_certificate /etc/letsencrypt/live/domain/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/domain/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/domain/chain.pem;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;
+    ssl_ciphers 'TLS13+AESGCM+AES128:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA:ECDHE-ECDSA-DES-CBC3-SHA:ECDHE-RSA-DES-CBC3-SHA:EDH-RSA-DES-CBC3-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA:!DSS';
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:50m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    ssl_ecdh_curve X25519:sect571r1:secp521r1:secp384r1;
+
+
+  location ^~ / {
+        client_max_body_size 512M;
+        fastcgi_buffers 8 4K;
+        fastcgi_ignore_headers X-Accel-Buffering;
+        gzip off;
+        error_page 403 /nextcloud/core/templates/403.php;
+        error_page 404 /nextcloud/core/templates/404.php;
+
+
+
+
+        location / {
+            rewrite ^ /index.php$uri;
+        }
+
+
+        location ~ ^/(?:build|tests|config|lib|3rdparty|templates|changelog|data)/ {
+            return 404;
+        }
+
+        location ~ ^/(?:\.|autotest|occ|issue|indie|db_|console|core/skeleton/) {
+            return 404;
+        }
+
+        location ~ ^/core/signature\.json {
+            return 404;
+        }
+
+
+        location ~ ^/(?:index|remote|public|cron|core/ajax/update|status|ocs/v[12]|updater/.+|oc[sm]-provider/.+|core/templates/40[34])\.php(?:$|/) {
+            fastcgi_split_path_info ^(.+\.php)(/.*)$;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_param SCRIPT_NAME $fastcgi_script_name;
+            fastcgi_param PATH_INFO $fastcgi_path_info;
+            fastcgi_param HTTPS on;
+            fastcgi_param modHeadersAvailable true;
+            fastcgi_read_timeout 180;
+            fastcgi_pass php-handler;
+            fastcgi_intercept_errors on;
+            fastcgi_request_buffering off;
+        }
+
+
+        location ~ ^/(?:updater|oc[sm]-provider)(?:$|/) {
+            try_files $uri $uri/ =404;
+            index index.php;
+        }
+
+
+       # Adding the cache control header for js and css files
+        # Make sure it is BELOW the PHP block
+        location ~ /.*\.(?:css|js) {
+            try_files $uri /nextcloud/index.php$uri$is_args$args;
+            add_header Cache-Control "max-age=15778463" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-XSS-Protection "1; mode=block" always;
+            add_header X-Robots-Tag "none" always;
+            add_header X-Download-Options "noopen" always;
+            add_header X-Permitted-Cross-Domain-Policies "none" always;
+            access_log off;
+        }
+
+
+        location ~ /.*\.(?:svg|gif|png|html|ttf|woff|ico|jpg|jpeg|map|json) {
+            try_files $uri /nextcloud/index.php$uri$is_args$args;
+            add_header Cache-Control "public, max-age=7200" always;
+            access_log off;
+        }
+
+
+  }
+
+}
